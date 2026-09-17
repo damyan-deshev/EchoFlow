@@ -267,7 +267,7 @@ fun SettingsScreen(
                 onOpenSarvam = { page = PageCustomProviderSarvam },
                 onBack = navigateBack,
             )
-            PageTextToSpeech -> TextToSpeechPage(viewModel, onBack = navigateBack)
+            PageTextToSpeech -> TextToSpeechPage(viewModel, chatViewModel, onBack = navigateBack)
             PageEchoLabs -> EchoLabsPage(viewModel, onOpen = { page = it }, onBack = navigateBack)
             PageDataAgent -> DataAgentPage(viewModel, onBack = navigateBack)
             PageBrowserFlow -> BrowserFlowPage(viewModel, onBack = navigateBack)

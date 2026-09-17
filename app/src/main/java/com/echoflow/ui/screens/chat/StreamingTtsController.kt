@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
@@ -171,7 +172,7 @@ internal class StreamingTtsController(
         })
     }
 
-    fun toggle(messageKey: String, text: String) {
+    fun toggle(messageKey: String, text: String, optionsOverride: TtsOptions? = null) {
         if (activeMessageKey == messageKey) {
             stop()
             return
@@ -179,7 +180,10 @@ internal class StreamingTtsController(
         stop()
         val chunks = TtsTextChunker.chunk(text)
         if (chunks.isEmpty()) return
-        val options = optionsProvider()
+        val options = optionsOverride ?: optionsProvider()
+        // Remote audio is already synthesized at the requested speed. A local preview may have
+        // changed ExoPlayer's playback rate, so never let that leak into ordinary read-aloud.
+        player.setPlaybackSpeed(1f)
 
         val token = Any()
         activeToken = token
@@ -242,6 +246,41 @@ internal class StreamingTtsController(
         }
     }
 
+    /** Play a bundled single-utterance WAV without contacting the TTS endpoint. */
+    fun toggleAsset(messageKey: String, assetPath: String, playbackSpeed: Float = 1f) {
+        if (activeMessageKey == messageKey) {
+            stop()
+            return
+        }
+        stop()
+        val token = Any()
+        activeToken = token
+        activeMessageKey = messageKey
+        producerFinished = false
+        _state.value = ReadAloudState(messageKey, ReadAloudPhase.Loading)
+
+        playbackJob = scope.launch {
+            try {
+                val wav = withContext(Dispatchers.IO) {
+                    appContext.assets.open(assetPath).use { it.readBytes() }
+                }
+                if (!wav.isWave()) throw IOException("Bundled voice preview is not a valid WAV")
+                if (activeToken !== token) throw CancellationException()
+                val chunkId = UUID.randomUUID().toString()
+                wavChunks[chunkId] = wav
+                player.setPlaybackSpeed(playbackSpeed.coerceIn(0.7f, 2f))
+                player.addMediaItem(MediaItem.fromUri("echoflow-tts://chunk/$chunkId"))
+                producerFinished = true
+                player.prepare()
+                player.play()
+            } catch (_: CancellationException) {
+                throw CancellationException()
+            } catch (error: Throwable) {
+                fail(error.message ?: "Voice preview failed")
+            }
+        }
+    }
+
     private suspend fun synthesizeWithRetry(text: String, options: TtsOptions): ByteArray {
         var lastError: IOException? = null
         repeat(MAX_NETWORK_ATTEMPTS) { attempt ->
@@ -294,6 +333,10 @@ internal class StreamingTtsController(
         wavChunks.clear()
         _state.value = ReadAloudState(error = message)
     }
+
+    private fun ByteArray.isWave(): Boolean =
+        size >= 12 && String(this, 0, 4, Charsets.US_ASCII) == "RIFF" &&
+            String(this, 8, 4, Charsets.US_ASCII) == "WAVE"
 
     override fun close() {
         activeToken = null
