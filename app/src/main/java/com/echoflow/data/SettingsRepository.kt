@@ -721,6 +721,7 @@ class SettingsRepository(context: Context) {
     // ── Read aloud / TTS ──────────────────────────────────────────────────────────────
 
     fun getTtsOptionsDirect(): TtsOptions = TtsOptions(
+        provider = TtsProvider.fromStorage(prefs.getString("tts_provider", null)),
         baseUrl = prefs.getString("tts_base_url", null).orEmpty().trim()
             .ifEmpty { TtsOptions().baseUrl },
         voice = prefs.getString("tts_voice", null).orEmpty().trim()
@@ -743,6 +744,7 @@ class SettingsRepository(context: Context) {
             silenceDuration = options.silenceDuration.coerceIn(0f, 10f),
         )
         prefs.edit()
+            .putString("tts_provider", clean.provider.storageKey)
             .putString("tts_base_url", clean.baseUrl)
             .putString("tts_voice", clean.voice)
             .putString("tts_language", clean.language.orEmpty())

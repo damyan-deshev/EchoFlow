@@ -393,7 +393,8 @@ internal fun SettingsHomePage(
     val sttCloudModelId by viewModel.sttCloudModel.collectAsState()
     val sttSubtitle = com.echoflow.data.SttCatalog.resolve(sttCloudModelId).name
     val ttsOptions by viewModel.ttsOptions.collectAsState()
-    val ttsSubtitle = "${ttsOptions.voice} · ${ttsOptions.language?.uppercase() ?: "Auto"} · ${ttsOptions.steps} steps"
+    val ttsLocation = if (ttsOptions.provider == com.echoflow.data.TtsProvider.OnDevice) "On device" else "Remote"
+    val ttsSubtitle = "$ttsLocation · ${ttsOptions.voice} · ${ttsOptions.language?.uppercase() ?: "Auto"} · ${ttsOptions.steps} steps"
     val deepResearchSubtitle = when {
         deepResearchModelId.isBlank() -> "No engine selected"
         else -> DeepResearchCatalog.providerEngineById(deepResearchModelId)?.name

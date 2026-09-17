@@ -31,9 +31,23 @@ android {
       abiFilters += listOf("arm64-v8a")
     }
 
+    externalNativeBuild {
+      cmake {
+        cppFlags += listOf("-O3")
+        arguments += listOf("-DANDROID_STL=c++_shared")
+      }
+    }
+
     ksp {
       arg("room.schemaLocation", "$projectDir/schemas")
       arg("room.incremental", "true")
+    }
+  }
+  ndkVersion = "27.2.12479018"
+  externalNativeBuild {
+    cmake {
+      path = file("src/main/cpp/CMakeLists.txt")
+      version = "3.31.6"
     }
   }
 

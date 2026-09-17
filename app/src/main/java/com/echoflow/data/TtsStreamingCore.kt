@@ -3,13 +3,24 @@ package com.echoflow.data
 import java.text.BreakIterator
 import java.util.Locale
 
+enum class TtsProvider(val storageKey: String) {
+    OnDevice("on_device"),
+    Remote("remote");
+
+    companion object {
+        fun fromStorage(value: String?): TtsProvider =
+            entries.firstOrNull { it.storageKey == value } ?: Remote
+    }
+}
+
 data class TtsOptions(
+    val provider: TtsProvider = TtsProvider.Remote,
     val baseUrl: String = "http://192.168.1.117:7788",
     val voice: String = "M1",
     /** null means Auto: omit lang and let the active Supertonic model use its fallback. */
     val language: String? = null,
     val speed: Float = 1.0f,
-    val steps: Int = 8,
+    val steps: Int = 12,
     val silenceDuration: Float = 0.3f,
 )
 
@@ -117,6 +128,32 @@ object TtsTextChunker {
         }
         flush()
         return result
+    }
+
+    /** Bisect one backend-rejected chunk without changing normal playlist chunking. */
+    fun splitForRetry(text: String): List<String> {
+        val clean = TtsTextNormalizer.normalize(text)
+        if (clean.length < 2) return listOf(clean).filter(String::isNotEmpty)
+        val midpoint = clean.length / 2
+        val minPiece = maxOf(1, clean.length / 5)
+        val punctuation = charArrayOf('.', '!', '?', ';', ':', ',')
+        val before = clean.lastIndexOfAny(punctuation, midpoint)
+            .takeIf { it + 1 >= minPiece }
+            ?.plus(1)
+        val after = clean.indexOfAny(punctuation, midpoint)
+            .takeIf { it >= 0 && clean.length - (it + 1) >= minPiece }
+            ?.plus(1)
+        val punctuationCut = listOfNotNull(before, after).minByOrNull { kotlin.math.abs(it - midpoint) }
+        val spaceBefore = clean.lastIndexOf(' ', midpoint).takeIf { it >= minPiece }
+        val spaceAfter = clean.indexOf(' ', midpoint).takeIf {
+            it >= 0 && clean.length - it >= minPiece
+        }
+        val cut = punctuationCut
+            ?: listOfNotNull(spaceBefore, spaceAfter).minByOrNull { kotlin.math.abs(it - midpoint) }
+            ?: midpoint
+        val first = clean.substring(0, cut).trim()
+        val second = clean.substring(cut).trim()
+        return listOf(first, second).filter(String::isNotEmpty)
     }
 
     private fun sentenceFragments(text: String, maxChars: Int): List<String> {

@@ -6,6 +6,18 @@ import org.junit.Test
 
 class TtsTextChunkerTest {
     @Test
+    fun `silent chunk retry split preserves all normalized text`() {
+        val text = "The chapter is titled Aversive Control: Avoidance and Punishment 5, " +
+            "and this arrangement leaves no alternative response and no way out."
+
+        val pieces = TtsTextChunker.splitForRetry(text)
+
+        assertEquals(2, pieces.size)
+        assertEquals(TtsTextNormalizer.normalize(text), pieces.joinToString(" "))
+        assertTrue(pieces.all(String::isNotBlank))
+    }
+
+    @Test
     fun `normalizer keeps spoken text and prosodic punctuation only`() {
         val normalized = TtsTextNormalizer.normalize(
             "IQ3_XXS: 92.57 ≤ 93.12, €40 • 🥹 наистина?!",

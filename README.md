@@ -24,10 +24,9 @@ Two surfaces — Chat for conversation, Imagine for images and video. Local mode
 
 ## Direction of this fork
 
-The working assumption here is that the phone is the interface, not necessarily the only computer.
-Today EchoFlow can talk directly to keyless OpenAI-compatible and TTS services on a trusted local
-network. As mobile runtimes improve, those same contracts should move on-device without requiring
-the chat UI to be rewritten.
+The working assumption here is that the phone is the interface and can choose where inference runs.
+EchoFlow can talk directly to keyless OpenAI-compatible and TTS services on a trusted local network,
+and Supertonic speech synthesis can also run fully on-device through MNN/OpenCL.
 
 Current fork-specific work includes:
 
@@ -37,9 +36,20 @@ Current fork-specific work includes:
   internet-facing endpoints remain HTTPS-only;
 - streaming-style read-aloud: text is split into ordered chunks, Supertonic returns independent WAV
   segments, and Media3 plays them as a live queue instead of waiting for one complete file;
-- configurable Supertonic endpoint, voice, language, speed, quality steps and phrase silence;
-- a planned on-device Supertonic provider behind the same EchoFlow-owned TTS options and playback
-  contract.
+- selectable on-device or remote Supertonic, with shared voice, language, speed, quality steps and
+  phrase-silence settings;
+- a pinned, hash-verified on-device model download and persistent OpenCL kernel cache. The model is
+  deliberately not committed to Git.
+
+The on-device provider currently targets arm64 Android phones. Its first uncached run compiles GPU
+kernels; later launches reuse an app-private cache. See [third-party notices](docs/third-party.md)
+for the pinned runtime, implementation provenance and model revision.
+
+Local inference is treated as fallible rather than merely complete when a WAV file exists. EchoFlow
+measures every generated PCM stream, rejects silent or implausibly short output, retries in a clean
+MNN runtime, and adaptively splits only a persistently failing text chunk. The recovered pieces stay
+as independent items in the same ordered Media3 playlist. The investigation and measured Pixel vs
+Strix evidence are recorded in [the on-device execution record](docs/work/on-device-supertonic.md).
 
 The defaults reflect the maintainer's own LAN and devices. Every address exposed by the fork is a
 runtime setting, not a claim that the same topology will suit another installation.

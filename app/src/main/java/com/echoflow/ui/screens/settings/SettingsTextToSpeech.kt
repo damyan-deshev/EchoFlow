@@ -16,6 +16,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import android.widget.Toast
 import com.echoflow.data.TtsOptions
+import com.echoflow.data.TtsProvider
+import com.echoflow.data.LocalTtsModelState
+import com.echoflow.data.LocalSupertonicManifest
 import com.echoflow.data.TtsPreviewShuffleBags
 import com.echoflow.data.TtsPreviewVoice
 import com.echoflow.data.TtsVoicePreviewCatalog
@@ -84,6 +87,28 @@ internal fun TextToSpeechPage(
         subtitle = "Supertonic speech playback",
         onBack = onBack,
     ) {
+        PageSection("Engine", "Run privately on this phone or use a Supertonic server")
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            listOf(TtsProvider.OnDevice to "On device", TtsProvider.Remote to "Remote")
+                .forEachIndexed { index, item ->
+                    SegmentedButton(
+                        selected = options.provider == item.first,
+                        onClick = { save { copy(provider = item.first) } },
+                        shape = SegmentedButtonDefaults.itemShape(index, 2),
+                        label = { Text(item.second) },
+                    )
+                }
+        }
+        if (options.provider == TtsProvider.OnDevice) {
+            Spacer(Modifier.height(Spacing.m))
+            LocalModelStatus(
+                state = controller?.localModelState?.collectAsState()?.value
+                    ?: LocalTtsModelState.Checking,
+                onDownload = { controller?.downloadLocalModel() },
+            )
+        }
+
+        Spacer(Modifier.height(Spacing.xl))
         PageSection("Voice", "These choices remain portable when the backend moves on-device")
         VoiceSettingPicker(
             selectedVoice = options.voice,
@@ -137,14 +162,16 @@ internal fun TextToSpeechPage(
         Spacer(Modifier.height(Spacing.xl))
         PageSection("Advanced", "Exact model and connection settings")
         FormCard {
-            OutlinedTextField(
-                value = options.baseUrl,
-                onValueChange = { value -> save { copy(baseUrl = value) } },
-                label = { Text("Endpoint URL") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(Spacing.m))
+            if (options.provider == TtsProvider.Remote) {
+                OutlinedTextField(
+                    value = options.baseUrl,
+                    onValueChange = { value -> save { copy(baseUrl = value) } },
+                    label = { Text("Endpoint URL") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(Spacing.m))
+            }
             SettingSlider(
                 title = "Steps",
                 valueLabel = options.steps.toString(),
@@ -162,6 +189,38 @@ internal fun TextToSpeechPage(
                 steps = 19,
                 onChange = { value -> save { copy(silenceDuration = value) } },
             )
+        }
+    }
+}
+
+@Composable
+private fun LocalModelStatus(state: LocalTtsModelState, onDownload: () -> Unit) {
+    FormCard {
+        when (state) {
+            LocalTtsModelState.Checking -> {
+                Text("Checking on-device model…")
+                Spacer(Modifier.height(Spacing.s))
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
+            LocalTtsModelState.Missing -> {
+                Text("Supertonic model · ${LocalSupertonicManifest.totalBytes / 1_000_000} MB")
+                Spacer(Modifier.height(Spacing.s))
+                Button(onClick = onDownload, modifier = Modifier.fillMaxWidth()) {
+                    Text("Download for offline use")
+                }
+            }
+            is LocalTtsModelState.Downloading -> {
+                val progress = if (state.total == 0L) 0f else state.downloaded.toFloat() / state.total
+                Text("Downloading · ${state.downloaded / 1_000_000} / ${state.total / 1_000_000} MB")
+                Spacer(Modifier.height(Spacing.s))
+                LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+            }
+            is LocalTtsModelState.Ready -> Text("Ready offline · ${state.bytes / 1_000_000} MB")
+            is LocalTtsModelState.Failed -> {
+                Text(state.message, color = MaterialTheme.colorScheme.error)
+                Spacer(Modifier.height(Spacing.s))
+                OutlinedButton(onClick = onDownload, modifier = Modifier.fillMaxWidth()) { Text("Retry download") }
+            }
         }
     }
 }

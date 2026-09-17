@@ -2,6 +2,7 @@ package com.echoflow.ui.screens.chat
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -14,7 +15,11 @@ import androidx.media3.datasource.TransferListener
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.echoflow.data.TtsAudioChunkSource
+import com.echoflow.data.LocalSupertonicChunkSource
+import com.echoflow.data.LocalTtsModelState
+import com.echoflow.data.SilentLocalTtsAudioException
 import com.echoflow.data.TtsOptions
+import com.echoflow.data.TtsProvider
 import com.echoflow.data.TtsTextChunker
 import java.io.Closeable
 import java.io.IOException
@@ -124,12 +129,14 @@ internal class RemoteSupertonicChunkSource(
  */
 internal class StreamingTtsController(
     context: Context,
-    private val source: TtsAudioChunkSource = RemoteSupertonicChunkSource(),
+    private val remoteSource: TtsAudioChunkSource = RemoteSupertonicChunkSource(),
+    private val localSource: LocalSupertonicChunkSource = LocalSupertonicChunkSource(context.applicationContext),
     private val optionsProvider: () -> TtsOptions = { TtsOptions() },
 ) : Closeable {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val wavChunks = ConcurrentHashMap<String, ByteArray>()
+    private val chunkIndexes = ConcurrentHashMap<String, Int>()
     private val player = ExoPlayer.Builder(appContext)
         .setMediaSourceFactory(DefaultMediaSourceFactory(appContext).setDataSourceFactory(
             InMemoryWavDataSourceFactory(wavChunks),
@@ -145,12 +152,14 @@ internal class StreamingTtsController(
     }
     private val _state = MutableStateFlow(ReadAloudState())
     val state: StateFlow<ReadAloudState> = _state.asStateFlow()
+    val localModelState: StateFlow<LocalTtsModelState> = localSource.modelStore.state
     private var playbackJob: Job? = null
     private var activeToken: Any? = null
     private var activeMessageKey: String? = null
     private var producerFinished = false
 
     init {
+        scope.launch { localSource.modelStore.refresh() }
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 val key = activeMessageKey ?: return
@@ -159,6 +168,12 @@ internal class StreamingTtsController(
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 val key = activeMessageKey ?: return
+                Log.i(
+                    LOG_TAG,
+                    "player state=${playbackState.label()} chunk=${currentChunkLabel()} " +
+                        "positionMs=${player.currentPosition} durationMs=${player.duration} " +
+                        "queued=${player.mediaItemCount}",
+                )
                 if (playbackState == Player.STATE_ENDED) {
                     if (producerFinished) finishPlayback() else {
                         _state.value = ReadAloudState(key, ReadAloudPhase.Loading)
@@ -166,7 +181,16 @@ internal class StreamingTtsController(
                 }
             }
 
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                Log.i(
+                    LOG_TAG,
+                    "player transition chunk=${mediaItem?.mediaId?.let(chunkIndexes::get)} " +
+                        "reason=$reason queued=${player.mediaItemCount}",
+                )
+            }
+
             override fun onPlayerError(error: PlaybackException) {
+                Log.e(LOG_TAG, "player error chunk=${currentChunkLabel()}", error)
                 fail(error.message ?: "Android could not play the Supertonic WAV")
             }
         })
@@ -197,8 +221,18 @@ internal class StreamingTtsController(
                     if (activeToken !== token) throw CancellationException()
                     val chunkId = "${UUID.randomUUID()}-$index"
                     wavChunks[chunkId] = wav
+                    chunkIndexes[chunkId] = index
                     val wasEnded = player.playbackState == Player.STATE_ENDED
-                    player.addMediaItem(MediaItem.fromUri("echoflow-tts://chunk/$chunkId"))
+                    player.addMediaItem(
+                        MediaItem.Builder()
+                            .setMediaId(chunkId)
+                            .setUri("echoflow-tts://chunk/$chunkId")
+                            .build(),
+                    )
+                    Log.i(
+                        LOG_TAG,
+                        "player queued chunk=$index wavBytes=${wav.size} queueSize=${player.mediaItemCount}",
+                    )
                     if (index == 0) {
                         player.prepare()
                         player.play()
@@ -211,29 +245,51 @@ internal class StreamingTtsController(
                     }
                 }
 
-                // Keep the first request alone so time-to-first-audio stays low.
-                appendWav(0, synthesizeWithRetry(chunks.first(), options))
-
-                // Once playback has started, synthesize a small look-ahead window in parallel.
-                // Results are still awaited and appended in source-text order.
-                coroutineScope {
-                    val pending = ArrayDeque<Pair<Int, Deferred<ByteArray>>>()
-                    var nextIndex = 1
-
-                    fun fillWindow() {
-                        while (pending.size < PREFETCH_WINDOW && nextIndex < chunks.size) {
-                            val index = nextIndex++
-                            pending += index to async {
-                                synthesizeWithRetry(chunks[index], options)
-                            }
+                if (options.provider == TtsProvider.OnDevice) {
+                    val remaining = ArrayDeque(chunks)
+                    var outputIndex = 0
+                    while (remaining.isNotEmpty()) {
+                        val chunk = remaining.removeFirst()
+                        try {
+                            val wav = synthesizeWithRetry(chunk, options)
+                            appendWav(outputIndex, wav)
+                            outputIndex++
+                        } catch (silent: SilentLocalTtsAudioException) {
+                            val retryPieces = TtsTextChunker.splitForRetry(chunk)
+                            if (retryPieces.size < 2) throw silent
+                            Log.w(
+                                LOG_TAG,
+                                "splitting silent chunk chars=${chunk.length} into=" +
+                                    retryPieces.joinToString(",") { it.length.toString() },
+                            )
+                            retryPieces.asReversed().forEach(remaining::addFirst)
                         }
                     }
+                } else {
+                    // Keep the first request alone so time-to-first-audio stays low.
+                    appendWav(0, synthesizeWithRetry(chunks.first(), options))
 
-                    fillWindow()
-                    while (pending.isNotEmpty()) {
-                        val (index, request) = pending.removeFirst()
-                        appendWav(index, request.await())
+                    // Once playback has started, synthesize a small look-ahead window in parallel.
+                    // Results are still awaited and appended in source-text order.
+                    coroutineScope {
+                        val pending = ArrayDeque<Pair<Int, Deferred<ByteArray>>>()
+                        var nextIndex = 1
+
+                        fun fillWindow() {
+                            while (pending.size < PREFETCH_WINDOW && nextIndex < chunks.size) {
+                                val index = nextIndex++
+                                pending += index to async {
+                                    synthesizeWithRetry(chunks[index], options)
+                                }
+                            }
+                        }
+
                         fillWindow()
+                        while (pending.isNotEmpty()) {
+                            val (index, request) = pending.removeFirst()
+                            appendWav(index, request.await())
+                            fillWindow()
+                        }
                     }
                 }
                 producerFinished = true
@@ -282,6 +338,8 @@ internal class StreamingTtsController(
     }
 
     private suspend fun synthesizeWithRetry(text: String, options: TtsOptions): ByteArray {
+        val source = if (options.provider == TtsProvider.OnDevice) localSource else remoteSource
+        if (options.provider == TtsProvider.OnDevice) return source.synthesize(text, options)
         var lastError: IOException? = null
         repeat(MAX_NETWORK_ATTEMPTS) { attempt ->
             try {
@@ -296,6 +354,18 @@ internal class StreamingTtsController(
         throw lastError ?: IOException("Read aloud failed")
     }
 
+    fun downloadLocalModel() {
+        scope.launch {
+            try {
+                localSource.modelStore.download()
+            } catch (_: CancellationException) {
+                throw CancellationException()
+            } catch (_: Throwable) {
+                // The store publishes the actionable failure in localModelState.
+            }
+        }
+    }
+
     fun stop() {
         activeToken = null
         activeMessageKey = null
@@ -305,6 +375,7 @@ internal class StreamingTtsController(
         player.stop()
         player.clearMediaItems()
         wavChunks.clear()
+        chunkIndexes.clear()
         _state.value = ReadAloudState()
     }
 
@@ -319,6 +390,7 @@ internal class StreamingTtsController(
         player.stop()
         player.clearMediaItems()
         wavChunks.clear()
+        chunkIndexes.clear()
         _state.value = ReadAloudState()
     }
 
@@ -331,6 +403,7 @@ internal class StreamingTtsController(
         player.stop()
         player.clearMediaItems()
         wavChunks.clear()
+        chunkIndexes.clear()
         _state.value = ReadAloudState(error = message)
     }
 
@@ -347,13 +420,27 @@ internal class StreamingTtsController(
         player.stop()
         player.clearMediaItems()
         wavChunks.clear()
+        chunkIndexes.clear()
         player.release()
+        localSource.close()
         scope.cancel()
     }
 
     private companion object {
+        const val LOG_TAG = "EchoFlowTTS"
         const val PREFETCH_WINDOW = 3
         const val MAX_NETWORK_ATTEMPTS = 3
+    }
+
+    private fun currentChunkLabel(): Int? =
+        player.currentMediaItem?.mediaId?.let(chunkIndexes::get)
+
+    private fun Int.label(): String = when (this) {
+        Player.STATE_IDLE -> "IDLE"
+        Player.STATE_BUFFERING -> "BUFFERING"
+        Player.STATE_READY -> "READY"
+        Player.STATE_ENDED -> "ENDED"
+        else -> toString()
     }
 }
 

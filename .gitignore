@@ -3,6 +3,8 @@
 .kotlin/
 build/
 **/build/
+.cxx/
+**/.cxx/
 .build-outputs/
 *.apk
 *.ap_
