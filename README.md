@@ -3,20 +3,46 @@
 
 # EchoFlow
 
-### A privacy-first Android AI workspace
+### A local-first Android AI workspace
 
 Two surfaces — Chat for conversation, Imagine for images and video. Local models, custom endpoints, web search, deep research, agents, artifacts. No backend, no account, no telemetry.
 
-[![Release](https://img.shields.io/github/v/release/adityavardhansharma/EchoFlow?style=flat-square&color=000000&label=release)](https://github.com/adityavardhansharma/EchoFlow/releases/latest)
+[![Upstream](https://img.shields.io/badge/upstream-EchoFlow-000000?style=flat-square)](https://github.com/adityavardhansharma/EchoFlow)
 [![License](https://img.shields.io/badge/license-MIT-000000?style=flat-square)](LICENSE.txt)
 [![Platform](https://img.shields.io/badge/platform-Android%2024%2B-000000?style=flat-square)](#)
 [![Kotlin](https://img.shields.io/badge/kotlin-2.x-000000?style=flat-square)](#)
 
-**[Download the latest APK →](https://github.com/adityavardhansharma/EchoFlow/releases/latest)**
-
 </div>
 
 <br/>
+
+> [!IMPORTANT]
+> This is Damyan Deshev's opinionated fork of
+> [adityavardhansharma/EchoFlow](https://github.com/adityavardhansharma/EchoFlow). It is built
+> around a specific local stack and may diverge from upstream product decisions. Use the upstream
+> project for its official releases; build this fork from source while it is under active development.
+
+## Direction of this fork
+
+The working assumption here is that the phone is the interface, not necessarily the only computer.
+Today EchoFlow can talk directly to keyless OpenAI-compatible and TTS services on a trusted local
+network. As mobile runtimes improve, those same contracts should move on-device without requiring
+the chat UI to be rewritten.
+
+Current fork-specific work includes:
+
+- editable system prompts, with assembled safe defaults or a complete raw override, globally and
+  per conversation;
+- keyless OpenAI-compatible HTTP endpoints on localhost or a private LAN, while authenticated and
+  internet-facing endpoints remain HTTPS-only;
+- streaming-style read-aloud: text is split into ordered chunks, Supertonic returns independent WAV
+  segments, and Media3 plays them as a live queue instead of waiting for one complete file;
+- configurable Supertonic endpoint, voice, language, speed, quality steps and phrase silence;
+- a planned on-device Supertonic provider behind the same EchoFlow-owned TTS options and playback
+  contract.
+
+The defaults reflect the maintainer's own LAN and devices. Every address exposed by the fork is a
+runtime setting, not a claim that the same topology will suit another installation.
 
 ## What it is
 
