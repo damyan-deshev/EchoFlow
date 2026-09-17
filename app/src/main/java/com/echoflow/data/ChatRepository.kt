@@ -38,6 +38,7 @@ class ChatRepository(
         title: String = defaultTitleFor(mode),
         now: Long = System.currentTimeMillis(),
         projectId: String? = null,
+        systemPromptPreference: SystemPromptPreference? = null,
     ): ChatThread {
         val thread = ChatThread(
             id = UUID.randomUUID().toString(),
@@ -46,6 +47,8 @@ class ChatRepository(
             updatedAt = now,
             kind = mode.storageKey,
             projectId = projectId,
+            systemPromptMode = systemPromptPreference?.mode?.storageKey,
+            systemPromptContent = systemPromptPreference?.content,
         )
         chatDao.insertThread(thread)
         return thread
@@ -69,5 +72,12 @@ class ChatRepository(
         messageDao.replaceUserTurn(updatedUser, oldAssistantId)
     suspend fun history(chatId: String): List<ChatMessage> = messageDao.getMessagesForChatSync(chatId)
     suspend fun thread(chatId: String): ChatThread? = chatDao.getThreadById(chatId)
-}
 
+    suspend fun saveSystemPrompt(chatId: String, preference: SystemPromptPreference?) {
+        chatDao.setSystemPrompt(
+            chatId,
+            preference?.mode?.storageKey,
+            preference?.normalizedForStorage()?.content,
+        )
+    }
+}

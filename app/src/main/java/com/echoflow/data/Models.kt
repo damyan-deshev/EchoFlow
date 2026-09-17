@@ -34,9 +34,17 @@ data class ChatThread(
      * away, so the "set null on project delete" is done in code (see ProjectManager).
      */
     val projectId: String? = null,
+    /** Null inherits the current global default; non-null pins this conversation's editor mode. */
+    val systemPromptMode: String? = null,
+    /** Safe identity text or a complete YOLO prompt, according to [systemPromptMode]. */
+    val systemPromptContent: String? = null,
 ) {
     val mode: AppMode get() = AppMode.fromStorage(kind)
     val isPinned: Boolean get() = pinnedAt != null
+    val systemPromptPreference: SystemPromptPreference?
+        get() = systemPromptMode?.let {
+            SystemPromptPreference(SystemPromptMode.fromStorage(it), systemPromptContent)
+        }
 }
 
 @Entity(

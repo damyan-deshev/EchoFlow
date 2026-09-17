@@ -21,10 +21,17 @@ object SystemPrompts {
      * @param provider effective search provider: "off", "openrouter", or a [ClientSearchProviders] id.
      *        Callers must pass "off" for unavailable combinations (e.g. local model + openrouter).
      */
-    fun build(isLocalModel: Boolean, provider: String, currentDate: String = currentDate()): String {
+    fun build(
+        isLocalModel: Boolean,
+        provider: String,
+        currentDate: String = currentDate(),
+        identityOverride: String? = null,
+    ): String {
         val sections = mutableListOf<String>()
 
-        sections += identity(isLocalModel)
+        (identityOverride ?: defaultIdentity(isLocalModel))
+            .takeIf { it.isNotBlank() }
+            ?.let(sections::add)
         sections += "Current date: $currentDate."
 
         sections += when (provider) {
@@ -132,9 +139,15 @@ object SystemPrompts {
      * @param provider effective search provider: "off" or a [ClientSearchProviders] id.
      *        ("openrouter" never reaches here — server search can't serve custom providers.)
      */
-    fun buildCustomProvider(provider: String, currentDate: String = currentDate()): String {
+    fun buildCustomProvider(
+        provider: String,
+        currentDate: String = currentDate(),
+        identityOverride: String? = null,
+    ): String {
         val sections = mutableListOf<String>()
-        sections += identity(false)
+        (identityOverride ?: defaultIdentity(false))
+            .takeIf { it.isNotBlank() }
+            ?.let(sections::add)
         sections += "Current date: $currentDate."
         val searchOn = provider in ClientSearchProviders.asSet
         sections += if (searchOn) injectedSearchGuidance(provider) else noSearch(false)
@@ -167,7 +180,7 @@ object SystemPrompts {
         """.trimIndent()
     }
 
-    private fun identity(isLocalModel: Boolean): String = buildString {
+    fun defaultIdentity(isLocalModel: Boolean): String = buildString {
         append("You are EchoFlow, a helpful, accurate AI assistant inside an Android chat app.")
         if (isLocalModel) {
             append(
@@ -312,7 +325,7 @@ object SystemPrompts {
      */
     fun buildEchoAdviser(advisorName: String, currentDate: String = currentDate()): String =
         listOf(
-            identity(false),
+            defaultIdentity(false),
             "Current date: $currentDate.",
             adviserGuidance(advisorName),
             openRouterServerSearch(),
@@ -326,7 +339,7 @@ object SystemPrompts {
      */
     fun buildEchoFusion(panelName: String, currentDate: String = currentDate()): String =
         listOf(
-            identity(false),
+            defaultIdentity(false),
             "Current date: $currentDate.",
             fusionGuidance(panelName),
             formatting(false),
@@ -339,7 +352,7 @@ object SystemPrompts {
      */
     fun buildEchoAgent(workerName: String, currentDate: String = currentDate()): String =
         listOf(
-            identity(false),
+            defaultIdentity(false),
             "Current date: $currentDate.",
             agentGuidance(workerName),
             formatting(false),
@@ -452,7 +465,7 @@ object SystemPrompts {
         currentDate: String = currentDate(),
     ): String {
         val sections = mutableListOf<String>()
-        sections += identity(isLocalModel)
+        sections += defaultIdentity(isLocalModel)
         sections += "Current date: $currentDate."
         sections += artifactContract()
         sections += artifactTypeGuidance()

@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.echoflow.data.InferenceParams
 import com.echoflow.data.SettingsRepository
+import com.echoflow.data.SystemPromptMode
+import com.echoflow.data.SystemPromptPreference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -143,5 +145,44 @@ class SettingsRepositoryCharacterizationTest {
         assertEquals("grok-4.5", restored.xAiModel)
         assertEquals("grok-4.5\ngrok-4.20", restored.xAiModels)
         assertEquals("grok-4.5", restored.xAiSelectedModels)
+    }
+
+    @Test
+    fun keylessCompatibleEndpointRoundTripsThroughARecreatedRepository() {
+        val repository = SettingsRepository(context)
+        repository.saveCustomProviderConfig(
+            repository.getCustomProviderConfigDirect().copy(
+                openAiCompatibleEnabled = true,
+                openAiBaseUrl = "  http://10.0.0.8:1234/v1  ",
+                openAiCompatibleApiKey = "",
+            )
+        )
+
+        val restored = SettingsRepository(context).getCustomProviderConfigDirect()
+        assertTrue(restored.openAiCompatibleEnabled)
+        assertEquals("http://10.0.0.8:1234/v1", restored.openAiBaseUrl)
+        assertEquals("", restored.openAiCompatibleApiKey)
+    }
+
+    @Test
+    fun systemPromptPreferenceRoundTripsThroughARecreatedRepository() {
+        SettingsRepository(context).saveSystemPromptPreference(
+            SystemPromptPreference(SystemPromptMode.Yolo, "  Raw prompt  ")
+        )
+
+        val restored = SettingsRepository(context).getSystemPromptPreferenceDirect()
+        assertEquals(SystemPromptMode.Yolo, restored.mode)
+        assertEquals("  Raw prompt  ", restored.content)
+    }
+
+    @Test
+    fun explicitlyBlankSafePromptDoesNotTurnBackIntoAnUnsetDefault() {
+        SettingsRepository(context).saveSystemPromptPreference(
+            SystemPromptPreference(SystemPromptMode.Safe, "")
+        )
+
+        val restored = SettingsRepository(context).getSystemPromptPreferenceDirect()
+        assertEquals(SystemPromptMode.Safe, restored.mode)
+        assertEquals("", restored.content)
     }
 }

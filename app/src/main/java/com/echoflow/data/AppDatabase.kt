@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         VideoModel::class, GeneratedVideo::class,
         Project::class, ProjectDocument::class, com.echoflow.data.memory.MemorySync::class
     ],
-    version = 26, // v26: durable memory upload revisions
+    version = 27, // v27: per-chat system prompt overrides
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -466,6 +466,14 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Existing chats inherit the global prompt until the user explicitly customizes them. */
+        internal val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE chat_threads ADD COLUMN systemPromptMode TEXT")
+                db.execSQL("ALTER TABLE chat_threads ADD COLUMN systemPromptContent TEXT")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -499,6 +507,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_23_24,
                     MIGRATION_24_25,
                     MIGRATION_25_26,
+                    MIGRATION_26_27,
                 )
                 .build()
                 INSTANCE = instance

@@ -30,8 +30,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -130,9 +133,12 @@ internal fun AnswerActionBar(
     onNextVersion: () -> Unit,
     onCopy: () -> Unit,
     showCopy: Boolean,
+    onReadAloud: () -> Unit,
+    readAloudPhase: ReadAloudPhase,
+    showReadAloud: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    if (versionCount <= 1 && !showCopy) return
+    if (versionCount <= 1 && !showCopy && !showReadAloud) return
 
     Row(
         modifier = modifier.padding(top = Spacing.xs),
@@ -167,6 +173,25 @@ internal fun AnswerActionBar(
                 onClick = onCopy,
             ) {
                 Icon(Icons.Default.ContentCopy, contentDescription = null, Modifier.size(16.dp))
+            }
+        }
+        if (showReadAloud) {
+            CompactActionButton(
+                contentDescription = when (readAloudPhase) {
+                    ReadAloudPhase.Idle -> "Read answer aloud"
+                    ReadAloudPhase.Loading -> "Cancel speech generation"
+                    ReadAloudPhase.Playing -> "Stop reading aloud"
+                },
+                onClick = onReadAloud,
+            ) {
+                when (readAloudPhase) {
+                    ReadAloudPhase.Idle ->
+                        Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null, Modifier.size(17.dp))
+                    ReadAloudPhase.Loading ->
+                        CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp)
+                    ReadAloudPhase.Playing ->
+                        Icon(Icons.Default.StopCircle, contentDescription = null, Modifier.size(17.dp))
+                }
             }
         }
     }

@@ -34,6 +34,10 @@ import com.echoflow.data.OpenRouterVideoModelDirectory
 import com.echoflow.data.OpenRouterVideoModelInfo
 import com.echoflow.data.SettingsRepository
 import com.echoflow.data.SttMode
+import com.echoflow.data.SystemPromptPreference
+import com.echoflow.data.SystemPromptRuntime
+import com.echoflow.data.SystemPrompts
+import com.echoflow.data.TtsOptions
 import com.echoflow.data.VideoModel
 import com.echoflow.data.VideoModelDao
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -64,8 +68,12 @@ class SettingsViewModel(
 
     val apiKey: StateFlow<String> = repository.apiKey
     val selectedModel: StateFlow<String> = repository.selectedModel
+    val systemPromptPreference: StateFlow<SystemPromptPreference> = repository.systemPromptPreference
     val themeColor: StateFlow<String> = repository.themeColor
     val darkMode: StateFlow<String> = repository.darkMode
+    val ttsOptions: StateFlow<TtsOptions> = repository.ttsOptions
+
+    fun saveTtsOptions(options: TtsOptions) = repository.saveTtsOptions(options)
 
     // Web search
     val webSearchProvider: StateFlow<String> = repository.webSearchProvider
@@ -300,6 +308,76 @@ class SettingsViewModel(
 
     fun saveSelectedModel(modelId: String) {
         repository.saveSelectedModel(modelId)
+    }
+
+    fun saveSystemPromptPreference(preference: SystemPromptPreference) {
+        repository.saveSystemPromptPreference(preference)
+    }
+
+    fun defaultSafeSystemInstructions(): String =
+        SystemPrompts.defaultIdentity(selectedModel.value.startsWith("local/"))
+
+    /** Builds the same ordinary-chat base prompt the send path would use right now. */
+    fun assembledSystemPrompt(preference: SystemPromptPreference): String {
+        val runtime = currentSystemPromptRuntime()
+        return preference.resolve(runtime)
+    }
+
+    fun systemPromptProvenance(): String {
+        val runtime = currentSystemPromptRuntime()
+        val target = when {
+            runtime.isLocalModel -> "On-device"
+            runtime.customProviderActive -> "Custom endpoint"
+            else -> "OpenRouter"
+        }
+        val search = if (runtime.effectiveProvider == "off") "search off" else runtime.effectiveProvider
+        return "$target · $search · ${SystemPrompts.currentDate()}"
+    }
+
+    private fun currentSystemPromptRuntime(): SystemPromptRuntime {
+        val model = selectedModel.value
+        val config = customProviderConfig.value
+        val customProvider = when {
+            model.startsWith(CustomProviderConfig.PREFIX_OPENAI) -> "openai"
+            model.startsWith(CustomProviderConfig.PREFIX_CLAUDE) -> "claude"
+            model.startsWith(CustomProviderConfig.PREFIX_GEMINI) -> "gemini"
+            model.startsWith(CustomProviderConfig.PREFIX_CEREBRAS) -> "cerebras"
+            model.startsWith(CustomProviderConfig.PREFIX_SARVAM) -> "sarvam"
+            model.startsWith(CustomProviderConfig.PREFIX_XAI) -> "xai"
+            model.startsWith(CustomProviderConfig.PREFIX_OLLAMA) -> "ollama"
+            model.startsWith(CustomProviderConfig.PREFIX_OPENAI_COMPATIBLE) -> "openai-compatible"
+            else -> null
+        }
+        val isLocal = model.startsWith("local/")
+        val provider = webSearchProvider.value
+        val scope = webSearchScope.value
+        val allowed = when (scope) {
+            "cloud" -> !isLocal
+            "local" -> isLocal
+            else -> true
+        }
+        val searchKey = when (provider) {
+            "exa" -> exaApiKey.value
+            "parallel" -> parallelApiKey.value
+            "firecrawl" -> firecrawlApiKey.value
+            else -> ""
+        }
+        val ready = com.echoflow.data.ClientSearchProviders.isReady(provider, searchKey)
+        val effectiveProvider = when {
+            !allowed -> "off"
+            isLocal && provider == "openrouter" -> "off"
+            customProvider != null && provider == "openrouter" -> "off"
+            provider == "openrouter" -> "openrouter"
+            ready -> provider
+            else -> "off"
+        }
+        val customTools = customProvider != null && effectiveProvider in com.echoflow.data.ClientSearchProviders.asSet &&
+            when (customProvider) {
+                "ollama" -> config.ollamaToolCallingEnabled
+                "openai-compatible" -> config.openAiCompatibleToolCallingEnabled
+                else -> true
+            }
+        return SystemPromptRuntime(isLocal, effectiveProvider, customProvider != null, customTools)
     }
 
     fun saveThemeColor(colorName: String) {

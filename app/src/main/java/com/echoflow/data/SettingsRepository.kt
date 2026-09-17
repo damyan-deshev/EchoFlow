@@ -81,6 +81,9 @@ class SettingsRepository(context: Context) {
     private val _selectedModel = MutableStateFlow(getSelectedModelDirect())
     val selectedModel: StateFlow<String> = _selectedModel.asStateFlow()
 
+    private val _systemPromptPreference = MutableStateFlow(getSystemPromptPreferenceDirect())
+    val systemPromptPreference: StateFlow<SystemPromptPreference> = _systemPromptPreference.asStateFlow()
+
     private val _themeColor = MutableStateFlow(getThemeColorDirect())
     val themeColor: StateFlow<String> = _themeColor.asStateFlow()
 
@@ -163,6 +166,9 @@ class SettingsRepository(context: Context) {
     private val _sarvamHinglishEnabled = MutableStateFlow(getSarvamHinglishEnabledDirect())
     val sarvamHinglishEnabled: StateFlow<Boolean> = _sarvamHinglishEnabled.asStateFlow()
 
+    private val _ttsOptions = MutableStateFlow(getTtsOptionsDirect())
+    val ttsOptions: StateFlow<TtsOptions> = _ttsOptions.asStateFlow()
+
     // Which surface the app is on. Persisted so a relaunch resumes where the user left off.
     private val _appMode = MutableStateFlow(getAppModeDirect())
     val appMode: StateFlow<AppMode> = _appMode.asStateFlow()
@@ -241,6 +247,20 @@ class SettingsRepository(context: Context) {
     fun saveSelectedModel(modelId: String) {
         prefs.edit().putString("selected_model", modelId).apply()
         _selectedModel.value = modelId
+    }
+
+    fun getSystemPromptPreferenceDirect(): SystemPromptPreference = SystemPromptPreference(
+        mode = SystemPromptMode.fromStorage(prefs.getString("system_prompt_mode", null)),
+        content = prefs.getString("system_prompt_content", null),
+    )
+
+    fun saveSystemPromptPreference(preference: SystemPromptPreference) {
+        val clean = preference.normalizedForStorage()
+        prefs.edit()
+            .putString("system_prompt_mode", clean.mode.storageKey)
+            .putString("system_prompt_content", clean.content)
+            .apply()
+        _systemPromptPreference.value = clean
     }
 
     fun getThemeColorDirect(): String {
@@ -696,6 +716,41 @@ class SettingsRepository(context: Context) {
     fun saveSarvamHinglishEnabled(enabled: Boolean) {
         prefs.edit().putBoolean("sarvam_hinglish_enabled", enabled).apply()
         _sarvamHinglishEnabled.value = enabled
+    }
+
+    // ── Read aloud / TTS ──────────────────────────────────────────────────────────────
+
+    fun getTtsOptionsDirect(): TtsOptions = TtsOptions(
+        baseUrl = prefs.getString("tts_base_url", null).orEmpty().trim()
+            .ifEmpty { TtsOptions().baseUrl },
+        voice = prefs.getString("tts_voice", null).orEmpty().trim()
+            .ifEmpty { TtsOptions().voice },
+        // An absent/blank value is deliberately Auto, never an implicit Bulgarian default.
+        language = prefs.getString("tts_language", null)?.trim()?.takeIf { it.isNotEmpty() },
+        speed = prefs.getFloat("tts_speed", TtsOptions().speed).coerceIn(0.7f, 2.0f),
+        steps = prefs.getInt("tts_steps", TtsOptions().steps).coerceIn(1, 100),
+        silenceDuration = prefs.getFloat("tts_silence", TtsOptions().silenceDuration)
+            .coerceIn(0f, 10f),
+    )
+
+    fun saveTtsOptions(options: TtsOptions) {
+        val clean = options.copy(
+            baseUrl = options.baseUrl.trim().trimEnd('/').ifEmpty { TtsOptions().baseUrl },
+            voice = options.voice.trim().ifEmpty { TtsOptions().voice },
+            language = options.language?.trim()?.takeIf { it.isNotEmpty() },
+            speed = options.speed.coerceIn(0.7f, 2.0f),
+            steps = options.steps.coerceIn(1, 100),
+            silenceDuration = options.silenceDuration.coerceIn(0f, 10f),
+        )
+        prefs.edit()
+            .putString("tts_base_url", clean.baseUrl)
+            .putString("tts_voice", clean.voice)
+            .putString("tts_language", clean.language.orEmpty())
+            .putFloat("tts_speed", clean.speed)
+            .putInt("tts_steps", clean.steps)
+            .putFloat("tts_silence", clean.silenceDuration)
+            .apply()
+        _ttsOptions.value = clean
     }
 
     // ── App mode ───────────────────────────────────────────────────────────────────────

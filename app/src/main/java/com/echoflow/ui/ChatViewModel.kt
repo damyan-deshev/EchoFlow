@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.room.withTransaction
 import androidx.lifecycle.viewModelScope
+import com.echoflow.ui.screens.chat.StreamingTtsController
 import com.echoflow.data.*
 import com.echoflow.data.memory.*
 import com.echoflow.data.extract.ModelFileCapability
@@ -52,6 +53,10 @@ class ChatViewModel(
     private val projectDocumentDao: ProjectDocumentDao,
     private val localInferenceGate: LocalInferenceGate
 ) : AndroidViewModel(application) {
+
+    internal val ttsController = StreamingTtsController(application) {
+        settingsRepository.ttsOptions.value
+    }
 
     // Artifacts: model-built, rendered content (web page / document / report) with version history.
     private val artifactManager = ArtifactManager(artifactDao, artifactVersionDao)
@@ -317,6 +322,36 @@ class ChatViewModel(
 
     private val _currentChatThreadId = MutableStateFlow<String?>(null)
     val currentChatThreadId: StateFlow<String?> = _currentChatThreadId.asStateFlow()
+
+    private val _pendingSystemPromptPreference = MutableStateFlow<SystemPromptPreference?>(null)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val currentSystemPromptPreference: StateFlow<SystemPromptPreference> =
+        combine(
+            _currentChatThreadId.flatMapLatest { id ->
+                if (id == null) flowOf(null) else chatDao.observeThreadById(id)
+            },
+            settingsRepository.systemPromptPreference,
+            _pendingSystemPromptPreference,
+        ) { thread, global, pending ->
+            if (_currentChatThreadId.value == null) pending ?: global
+            else thread?.systemPromptPreference ?: global
+        }.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            settingsRepository.systemPromptPreference.value,
+        )
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val currentSystemPromptInherited: StateFlow<Boolean> =
+        combine(
+            _currentChatThreadId.flatMapLatest { id ->
+                if (id == null) flowOf(null) else chatDao.observeThreadById(id)
+            },
+            _pendingSystemPromptPreference,
+        ) { thread, pending ->
+            if (_currentChatThreadId.value == null) pending == null else thread?.systemPromptMode == null
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
     /** Held by [openThread] and by any restore that must not undo a later navigation. */
     private val navigation = NavigationGuard()
@@ -1060,7 +1095,27 @@ class ChatViewModel(
     }
 
     fun startNewChat() {
+        _pendingSystemPromptPreference.value = null
         selectThread(null)
+    }
+
+    fun saveCurrentSystemPrompt(preference: SystemPromptPreference) {
+        val clean = preference.normalizedForStorage()
+        val chatId = _currentChatThreadId.value
+        if (chatId == null) {
+            _pendingSystemPromptPreference.value = clean
+        } else {
+            viewModelScope.launch { chatRepository.saveSystemPrompt(chatId, clean) }
+        }
+    }
+
+    fun resetCurrentSystemPrompt() {
+        val chatId = _currentChatThreadId.value
+        if (chatId == null) {
+            _pendingSystemPromptPreference.value = null
+        } else {
+            viewModelScope.launch { chatRepository.saveSystemPrompt(chatId, null) }
+        }
     }
 
     fun deleteThread(thread: ChatThread) {
@@ -1474,15 +1529,18 @@ class ChatViewModel(
                 SystemPrompts.buildArtifact(isLocal, offline, prior)
             } else null
 
-            val baseSystemPrompt = echoSystemPrompt ?: artifactSystemPrompt ?: when {
-                // Tool-calling custom providers behave like cloud models: they call web_search
-                // themselves, so they get the standard "you have a web_search tool" prompt.
-                customToolCallingActive -> SystemPrompts.build(false, effectiveProvider)
-                // Other custom providers have no native tool calling; their search results are
-                // pre-injected, so they need the "results are provided" prompt instead.
-                customProviderActive -> SystemPrompts.buildCustomProvider(effectiveProvider)
-                else -> SystemPrompts.build(isLocal, effectiveProvider)
-            }
+            val currentThreadRow = _currentChatThreadId.value?.let { chatRepository.thread(it) }
+            val promptPreference = currentThreadRow?.systemPromptPreference
+                ?: _pendingSystemPromptPreference.value
+                ?: settingsRepository.getSystemPromptPreferenceDirect()
+            val promptRuntime = SystemPromptRuntime(
+                isLocalModel = isLocal,
+                effectiveProvider = effectiveProvider,
+                customProviderActive = customProviderActive,
+                customToolCallingActive = customToolCallingActive,
+            )
+            val ordinarySystemPrompt = promptPreference.resolve(promptRuntime)
+            val baseSystemPrompt = echoSystemPrompt ?: artifactSystemPrompt ?: ordinarySystemPrompt
 
             // Project context: the open thread's project (or the pending one for a brand-new
             // project chat) contributes its instructions + reference documents to the prompt.
@@ -1512,8 +1570,10 @@ class ChatViewModel(
                 chatId = chatRepository.createThread(
                     mode = if (activeProjectId != null) AppMode.Chat else appMode.value,
                     projectId = activeProjectId,
+                    systemPromptPreference = promptPreference,
                 ).id
                 openThread(chatId)
+                _pendingSystemPromptPreference.value = null
                 // The blank thread is real now, so this mode returns here rather than to
                 // whatever came before it.
                 settingsRepository.saveLastPosition(appMode.value, ModePosition.Thread(chatId))
@@ -2504,6 +2564,7 @@ class ChatViewModel(
     // -------------------------------------------------------------------------------
 
     override fun onCleared() {
+        ttsController.close()
         localLlmService.releaseAll()
         super.onCleared()
     }

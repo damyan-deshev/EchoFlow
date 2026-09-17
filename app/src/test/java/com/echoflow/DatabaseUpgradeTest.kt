@@ -56,7 +56,7 @@ class DatabaseUpgradeTest {
     }
 
     @Test
-    fun `production database upgrades version one through version twenty without data loss`() {
+    fun `production database upgrades version one through version twenty seven without data loss`() {
         val database = AppDatabase.getDatabase(context).also { openedDatabase = it }
 
         // v13 tables exist and are queryable after the chained migration.
@@ -129,5 +129,14 @@ class DatabaseUpgradeTest {
         database.openHelper.readableDatabase.query(
             "SELECT hiddenFromGallery FROM artifacts LIMIT 0"
         ).use { /* queryable => the additive column landed */ }
+
+        // v27: existing conversations inherit the global prompt until explicitly customized.
+        database.openHelper.readableDatabase.query(
+            "SELECT systemPromptMode, systemPromptContent FROM chat_threads WHERE id = 'thread-1'"
+        ).use { cursor ->
+            cursor.moveToFirst()
+            assertEquals(null, cursor.getString(0))
+            assertEquals(null, cursor.getString(1))
+        }
     }
 }

@@ -151,6 +151,15 @@ internal fun ChatSurface(
     topBarInset: Dp,
 ) {
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val ttsController = chatViewModel.ttsController
+    val readAloudState by ttsController.state.collectAsState()
+    LaunchedEffect(readAloudState.error) {
+        readAloudState.error?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            ttsController.clearError()
+        }
+    }
 
     val messages by chatViewModel.currentMessages.collectAsState()
     val currentThreadProject by chatViewModel.currentThreadProject.collectAsState()
@@ -174,6 +183,9 @@ internal fun ChatSurface(
     val replyVersionPick by chatViewModel.replyVersionPick.collectAsState()
     val lastUserMessageId = remember(messages) { messages.lastOrNull { it.role == "user" }?.id }
     val reducedMotion = rememberReducedMotion()
+
+    LaunchedEffect(currentThreadId) { ttsController.stop() }
+    LaunchedEffect(isStreaming) { if (isStreaming) ttsController.stop() }
 
     val deepResearchActive by chatViewModel.deepResearchActive.collectAsState()
     val webSearchChipOn by chatViewModel.webSearchChipOn.collectAsState()
@@ -478,7 +490,12 @@ internal fun ChatSurface(
                         replyVersionPick[messageId]?.coerceIn(0, (total - 1).coerceAtLeast(0))
                             ?: (total - 1).coerceAtLeast(0)
                     },
-                    onReplyVersionChange = chatViewModel::selectReplyVersion,
+                    onReplyVersionChange = { messageId, index ->
+                        ttsController.stop()
+                        chatViewModel.selectReplyVersion(messageId, index)
+                    },
+                    readAloudState = readAloudState,
+                    onReadAloud = ttsController::toggle,
                     canEditMessages = !isStreaming &&
                         !progressLoading &&
                         researchRun == null &&

@@ -58,6 +58,8 @@ internal fun MessageBubble(
     onEditUserMessage: (String) -> Unit = {},
     replyVersionIndex: Int = 0,
     onReplyVersionChange: (String, Int) -> Unit = { _, _ -> },
+    readAloudState: ReadAloudState = ReadAloudState(),
+    onReadAloud: (messageKey: String, text: String) -> Unit = { _, _ -> },
 ) {
     val isUser = message.role == "user"
     if (isUser) {
@@ -119,6 +121,8 @@ internal fun MessageBubble(
                     (segment.type == "image" && segment.image != null) ||
                         (segment.type == "video" && segment.video != null)
                 }
+                val readAloudText = ReplyVersions.copyText(message, replyVersionIndex)
+                val readAloudKey = "${message.id}:$replyVersionIndex"
                 AnswerActionBar(
                     versionIndex = replyVersionIndex,
                     versionCount = versionCount,
@@ -133,6 +137,13 @@ internal fun MessageBubble(
                     },
                     onCopy = { onCopy(ReplyVersions.copyText(message, replyVersionIndex)) },
                     showCopy = lastGeneratedMediaIndex == -1,
+                    onReadAloud = { onReadAloud(readAloudKey, readAloudText) },
+                    readAloudPhase = if (readAloudState.messageKey == readAloudKey) {
+                        readAloudState.phase
+                    } else {
+                        ReadAloudPhase.Idle
+                    },
+                    showReadAloud = readAloudText.isNotBlank(),
                 )
             }
         }

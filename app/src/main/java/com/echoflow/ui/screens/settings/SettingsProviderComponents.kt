@@ -359,7 +359,7 @@ internal fun EndpointConnectionCard(
         }
         Spacer(Modifier.height(Spacing.m))
         Text(
-            "Plain HTTP is allowed for localhost and private LAN addresses only. Use HTTPS for internet-facing servers.",
+            "Plain HTTP is allowed only for keyless localhost or private LAN endpoints. Use HTTPS before adding credentials or connecting an internet-facing server.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

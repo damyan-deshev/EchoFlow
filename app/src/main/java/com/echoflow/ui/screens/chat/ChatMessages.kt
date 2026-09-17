@@ -59,6 +59,8 @@ internal fun MessagesPane(
     replyVersionIndexFor: (messageId: String, total: Int) -> Int = { _, total -> (total - 1).coerceAtLeast(0) },
     onReplyVersionChange: (messageId: String, index: Int) -> Unit = { _, _ -> },
     canEditMessages: Boolean = true,
+    readAloudState: ReadAloudState = ReadAloudState(),
+    onReadAloud: (messageKey: String, text: String) -> Unit = { _, _ -> },
 ) {
     val listState = rememberLazyListState()
     var autoFollow by remember { mutableStateOf(true) }
@@ -114,6 +116,8 @@ internal fun MessagesPane(
                     0
                 },
                 onReplyVersionChange = onReplyVersionChange,
+                readAloudState = readAloudState,
+                onReadAloud = onReadAloud,
             )
         }
         researchRun?.let { run ->

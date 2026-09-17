@@ -31,6 +31,7 @@ fun MainNavigationHub(chatViewModel: ChatViewModel, settingsViewModel: SettingsV
             BackHandler { activeTab = "chat" }
             SettingsScreen(
                 viewModel = settingsViewModel,
+                chatViewModel = chatViewModel,
                 onBackClicked = { activeTab = "chat" },
                 startPage = settingsStartPage,
                 onStartPageConsumed = { settingsStartPage = null },

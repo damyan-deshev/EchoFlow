@@ -161,13 +161,34 @@ data class ProviderValidationResult(
     val message: String,
 )
 
+/**
+ * Android must permit cleartext globally before OkHttp can reach a developer's LAN server. This
+ * network interceptor narrows that permission back down to the intended contract: no credentials,
+ * and the address actually connected to (not merely the typed hostname) must be private/local.
+ */
+private fun defaultCustomProviderClient(): OkHttpClient = OkHttpClient.Builder()
+    .addNetworkInterceptor { chain ->
+        if (!chain.request().url.isHttps) {
+            require(chain.request().header("Authorization").isNullOrBlank()) {
+                "HTTP provider endpoints cannot send API credentials. Use HTTPS for authenticated providers."
+            }
+            val address = chain.connection()?.route()?.socketAddress?.address
+            require(address != null &&
+                (address.isLoopbackAddress || address.isSiteLocalAddress || address.isLinkLocalAddress)
+            ) {
+                "Plain HTTP is allowed only for localhost or private LAN providers."
+            }
+        }
+        chain.proceed(chain.request())
+    }
+    .connectTimeout(20, TimeUnit.SECONDS)
+    .readTimeout(90, TimeUnit.SECONDS)
+    .writeTimeout(30, TimeUnit.SECONDS)
+    .build()
+
 class CustomProviderService(
     private val context: Context? = null,
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(90, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
-        .build(),
+    private val client: OkHttpClient = defaultCustomProviderClient(),
 ) {
     private val moshi = Moshi.Builder()
         .add(KotlinJsonAdapterFactory())

@@ -67,6 +67,9 @@ interface ChatDao {
     @Query("UPDATE chat_threads SET projectId = :projectId WHERE id = :id")
     suspend fun setProjectId(id: String, projectId: String?)
 
+    @Query("UPDATE chat_threads SET systemPromptMode = :mode, systemPromptContent = :content WHERE id = :id")
+    suspend fun setSystemPrompt(id: String, mode: String?, content: String?)
+
     /** Return a project's chats to the drawer — used when a project is deleted (no FK cascade). */
     @Query("UPDATE chat_threads SET projectId = NULL WHERE projectId = :projectId")
     suspend fun clearProjectAssignments(projectId: String)
@@ -76,6 +79,9 @@ interface ChatDao {
 
     @Query("SELECT * FROM chat_threads WHERE id = :id LIMIT 1")
     suspend fun getThreadById(id: String): ChatThread?
+
+    @Query("SELECT * FROM chat_threads WHERE id = :id LIMIT 1")
+    fun observeThreadById(id: String): Flow<ChatThread?>
 
     /** The project a conversation belongs to (or null), observed for the in-chat project pill. */
     @Query("SELECT projectId FROM chat_threads WHERE id = :id LIMIT 1")

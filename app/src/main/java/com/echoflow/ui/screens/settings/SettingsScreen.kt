@@ -63,6 +63,7 @@ import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -108,6 +109,7 @@ import com.echoflow.data.LocalModel
 import com.echoflow.data.LocalModelCatalog
 import com.echoflow.data.OpenRouterModelInfo
 import com.echoflow.ui.SettingsViewModel
+import com.echoflow.ui.ChatViewModel
 import com.echoflow.ui.components.GroupedItemGap
 import com.echoflow.ui.components.SectionLabel
 import com.echoflow.ui.components.groupedItemShape
@@ -149,12 +151,14 @@ internal const val PageMemory = "memory"
 internal const val PageMyMemories = "my_memories"
 internal const val PageAppearance = "appearance"
 internal const val PageModels = "models"
+internal const val PageSystemPrompt = "system_prompt"
 internal const val PageCloudModels = "cloud_models"
 internal const val PageWebSearch = "web_search"
 internal const val PageLocalModels = "local_models"
 internal const val PageDeepResearch = "deep_research"
 internal const val PageImagine = "imagine"
 internal const val PageSpeechToText = "speech_to_text"
+internal const val PageTextToSpeech = "text_to_speech"
 internal const val PageDataAgent = "data_agent"
 internal const val PageBrowserFlow = "browser_flow"
 internal const val PageEchoLabs = "echo_labs"
@@ -178,8 +182,8 @@ internal val CustomProviderSectionGap = 28.dp
 internal fun settingsParentPage(page: String): String? = when (page) {
     PageHome -> null
     PageMyMemories -> PageMemory
-    PageAppearance, PageModels, PageCloudModels, PageWebSearch, PageLocalModels,
-    PageDeepResearch, PageImagine, PageSpeechToText, PageEchoLabs, PageCustomProviderCloud,
+    PageAppearance, PageModels, PageSystemPrompt, PageCloudModels, PageWebSearch, PageLocalModels,
+    PageDeepResearch, PageImagine, PageSpeechToText, PageTextToSpeech, PageEchoLabs, PageCustomProviderCloud,
     -> PageHome
     PageDataAgent, PageBrowserFlow, PageEchoAdviser, PageEchoFusion,
     PageEchoAgent, PageCustomProvider, PageLicenses,
@@ -214,6 +218,7 @@ internal fun sectionExit(): ExitTransition = shrinkVertically(
 fun SettingsScreen(
     viewModel: SettingsViewModel,
     onBackClicked: () -> Unit,
+    chatViewModel: ChatViewModel? = null,
     startPage: String? = null,
     onStartPageConsumed: () -> Unit = {},
 ) {
@@ -250,6 +255,7 @@ fun SettingsScreen(
             PageMyMemories -> MyMemoriesPage(onBack = navigateBack)
             PageAppearance -> AppearancePage(viewModel, onBack = navigateBack)
             PageModels -> ModelsPage(viewModel, onBack = navigateBack)
+            PageSystemPrompt -> SystemPromptSettingsPage(viewModel, chatViewModel, onBack = navigateBack)
             PageCloudModels -> CloudModelsPage(viewModel, onBack = navigateBack)
             PageWebSearch -> WebSearchPage(viewModel, onBack = navigateBack)
             PageLocalModels -> LocalModelsPage(viewModel, onBack = navigateBack)
@@ -261,6 +267,7 @@ fun SettingsScreen(
                 onOpenSarvam = { page = PageCustomProviderSarvam },
                 onBack = navigateBack,
             )
+            PageTextToSpeech -> TextToSpeechPage(viewModel, onBack = navigateBack)
             PageEchoLabs -> EchoLabsPage(viewModel, onOpen = { page = it }, onBack = navigateBack)
             PageDataAgent -> DataAgentPage(viewModel, onBack = navigateBack)
             PageBrowserFlow -> BrowserFlowPage(viewModel, onBack = navigateBack)
@@ -344,6 +351,7 @@ internal fun SettingsHomePage(
     val echoFusionEnabled by viewModel.echoFusionEnabled.collectAsState()
     val echoAgentEnabled by viewModel.echoAgentEnabled.collectAsState()
     val customProviderConfig by viewModel.customProviderConfig.collectAsState()
+    val systemPromptPreference by viewModel.systemPromptPreference.collectAsState()
     val firecrawlKeyHome by viewModel.firecrawlApiKey.collectAsState()
     val advisorProfiles by viewModel.advisorProfiles.collectAsState()
     val fusionPanels by viewModel.fusionPanels.collectAsState()
@@ -384,6 +392,8 @@ internal fun SettingsHomePage(
     val imagineSubtitle = "$imageGenSubtitle · $videoModelName"
     val sttCloudModelId by viewModel.sttCloudModel.collectAsState()
     val sttSubtitle = com.echoflow.data.SttCatalog.resolve(sttCloudModelId).name
+    val ttsOptions by viewModel.ttsOptions.collectAsState()
+    val ttsSubtitle = "${ttsOptions.voice} · ${ttsOptions.language?.uppercase() ?: "Auto"} · ${ttsOptions.steps} steps"
     val deepResearchSubtitle = when {
         deepResearchModelId.isBlank() -> "No engine selected"
         else -> DeepResearchCatalog.providerEngineById(deepResearchModelId)?.name
@@ -432,7 +442,7 @@ internal fun SettingsHomePage(
                 subtitle = "$themeLabel theme · $accentLabel accent",
                 container = MaterialTheme.colorScheme.primaryContainer,
                 onContainer = MaterialTheme.colorScheme.onPrimaryContainer,
-                index = 0, count = 9,
+                index = 0, count = 11,
                 onClick = { onOpen(PageAppearance) },
             )
             SettingsNavRow(
@@ -442,8 +452,18 @@ internal fun SettingsHomePage(
                 subtitle = "OpenRouter & on-device",
                 container = MaterialTheme.colorScheme.secondaryContainer,
                 onContainer = MaterialTheme.colorScheme.onSecondaryContainer,
-                index = 1, count = 9,
+                index = 1, count = 11,
                 onClick = { onOpen(PageModels) },
+            )
+            SettingsNavRow(
+                icon = Icons.Default.Tune,
+                polygon = MaterialShapes.Cookie7Sided,
+                title = "System prompt",
+                subtitle = if (systemPromptPreference.mode == com.echoflow.data.SystemPromptMode.Yolo) "YOLO · raw override" else "Safe · assembled defaults",
+                container = MaterialTheme.colorScheme.primaryContainer,
+                onContainer = MaterialTheme.colorScheme.onPrimaryContainer,
+                index = 2, count = 11,
+                onClick = { onOpen(PageSystemPrompt) },
             )
             SettingsNavRow(
                 icon = Icons.Default.Key,
@@ -452,7 +472,7 @@ internal fun SettingsHomePage(
                 subtitle = "OpenAI · Claude · Gemini · Cerebras · Sarvam · xAI",
                 container = MaterialTheme.colorScheme.primaryContainer,
                 onContainer = MaterialTheme.colorScheme.onPrimaryContainer,
-                index = 2, count = 9,
+                index = 3, count = 11,
                 onClick = { onOpen(PageCustomProviderCloud) },
             )
             SettingsNavRow(
@@ -462,7 +482,7 @@ internal fun SettingsHomePage(
                 subtitle = searchSubtitle,
                 container = MaterialTheme.colorScheme.tertiaryContainer,
                 onContainer = MaterialTheme.colorScheme.onTertiaryContainer,
-                index = 3, count = 9,
+                index = 4, count = 11,
                 onClick = { onOpen(PageWebSearch) },
             )
             SettingsNavRow(
@@ -472,7 +492,7 @@ internal fun SettingsHomePage(
                 subtitle = deepResearchSubtitle,
                 container = MaterialTheme.colorScheme.secondaryContainer,
                 onContainer = MaterialTheme.colorScheme.onSecondaryContainer,
-                index = 4, count = 9,
+                index = 5, count = 11,
                 onClick = { onOpen(PageDeepResearch) },
             )
             SettingsNavRow(
@@ -482,7 +502,7 @@ internal fun SettingsHomePage(
                 subtitle = imagineSubtitle,
                 container = MaterialTheme.colorScheme.primaryContainer,
                 onContainer = MaterialTheme.colorScheme.onPrimaryContainer,
-                index = 5, count = 9,
+                index = 6, count = 11,
                 onClick = { onOpen(PageImagine) },
             )
             SettingsNavRow(
@@ -492,8 +512,18 @@ internal fun SettingsHomePage(
                 subtitle = sttSubtitle,
                 container = MaterialTheme.colorScheme.secondaryContainer,
                 onContainer = MaterialTheme.colorScheme.onSecondaryContainer,
-                index = 6, count = 9,
+                index = 7, count = 11,
                 onClick = { onOpen(PageSpeechToText) },
+            )
+            SettingsNavRow(
+                icon = Icons.Default.VolumeUp,
+                polygon = MaterialShapes.Cookie9Sided,
+                title = "Read aloud",
+                subtitle = ttsSubtitle,
+                container = MaterialTheme.colorScheme.tertiaryContainer,
+                onContainer = MaterialTheme.colorScheme.onTertiaryContainer,
+                index = 8, count = 11,
+                onClick = { onOpen(PageTextToSpeech) },
             )
             SettingsNavRow(
                 icon = Icons.Default.AutoAwesome,
@@ -502,7 +532,7 @@ internal fun SettingsHomePage(
                 subtitle = echoLabsSubtitle,
                 container = MaterialTheme.colorScheme.tertiaryContainer,
                 onContainer = MaterialTheme.colorScheme.onTertiaryContainer,
-                index = 7, count = 9,
+                index = 9, count = 11,
                 onClick = { onOpen(PageEchoLabs) },
             )
             SettingsNavRow(
@@ -512,7 +542,7 @@ internal fun SettingsHomePage(
                 subtitle = "Supermemory · EchoBrain",
                 container = MaterialTheme.colorScheme.secondaryContainer,
                 onContainer = MaterialTheme.colorScheme.onSecondaryContainer,
-                index = 8, count = 9,
+                index = 10, count = 11,
                 onClick = { onOpen(PageMemory) },
             )
         }
