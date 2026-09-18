@@ -11,6 +11,9 @@ permissions:
 jobs:
   focused-unit-test:
     runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v5
@@ -18,8 +21,9 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: gradle
-      - uses: android-actions/setup-android@v3
-      - name: Install Android platform
-        run: sdkmanager "platforms;android-37" "build-tools;36.0.0"
+      - name: Accept SDK licenses and install platform
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platforms;android-37" "build-tools;36.0.0"
       - name: Run focused normalizer and chunker tests
         run: ./gradlew :app:testDebugUnitTest --tests com.echoflow.data.TtsTextChunkerTest --stacktrace
