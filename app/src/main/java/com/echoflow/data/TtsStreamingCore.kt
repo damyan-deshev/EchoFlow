@@ -58,8 +58,16 @@ object TtsTextNormalizer {
                     acceptsCombiningMark = false
                 }
                 Character.isLetter(codePoint) || Character.isDigit(codePoint) -> {
-                    result.appendCodePoint(codePoint)
-                    acceptsCombiningMark = true
+                    // The bundled Supertonic unicode index is BMP-sized. Preserve supported
+                    // letters/digits and turn astral characters into a word boundary instead of
+                    // letting a later 16-bit lookup silently alias them to unrelated tokens.
+                    if (codePoint <= Char.MAX_VALUE.code) {
+                        result.appendCodePoint(codePoint)
+                        acceptsCombiningMark = true
+                    } else {
+                        result.append(' ')
+                        acceptsCombiningMark = false
+                    }
                 }
                 type == Character.NON_SPACING_MARK.toInt() ||
                     type == Character.COMBINING_SPACING_MARK.toInt() ||
@@ -150,7 +158,9 @@ object TtsTextChunker {
         }
         val cut = punctuationCut
             ?: listOfNotNull(spaceBefore, spaceAfter).minByOrNull { kotlin.math.abs(it - midpoint) }
-            ?: midpoint
+            // Never bisect an unbroken token. Independent TTS chunks would pronounce the two
+            // halves as separate words, changing content rather than merely recovering it.
+            ?: return listOf(clean)
         val first = clean.substring(0, cut).trim()
         val second = clean.substring(cut).trim()
         return listOf(first, second).filter(String::isNotEmpty)
