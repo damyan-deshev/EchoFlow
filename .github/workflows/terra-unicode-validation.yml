@@ -1,0 +1,25 @@
+name: Terra Unicode normalization validation
+
+on:
+  push:
+    branches:
+      - validation/terra-unicode-20260918
+
+permissions:
+  contents: read
+
+jobs:
+  focused-unit-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - name: Install Android platform
+        run: sdkmanager "platforms;android-37" "build-tools;36.0.0"
+      - name: Run focused normalizer and chunker tests
+        run: ./gradlew :app:testDebugUnitTest --tests com.echoflow.data.TtsTextChunkerTest --stacktrace
