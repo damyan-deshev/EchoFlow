@@ -25,6 +25,6 @@ jobs:
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKMANAGER" --licenses >/dev/null
-          "$SDKMANAGER" "platforms;android-37" "build-tools;36.0.0"
+          "$SDKMANAGER" --channel=3 "platforms;android-37" "build-tools;36.0.0"
       - name: Run focused normalizer and chunker tests
         run: ./gradlew :app:testDebugUnitTest --tests com.echoflow.data.TtsTextChunkerTest --stacktrace
