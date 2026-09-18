@@ -60,6 +60,11 @@ class TtsTextChunkerTest {
     }
 
     @Test
+    fun `normalizer drops astral combining marks unsupported by the tokenizer`() {
+        assertEquals("ab", TtsTextNormalizer.normalize("a\uD834\uDD65b"))
+    }
+
+    @Test
     fun `first sentence is emitted immediately and later sentences are packed`() {
         val chunks = TtsTextChunker.chunk(
             "Първото изречение тръгва веднага. Второто може да чака. Третото върви с него.",
