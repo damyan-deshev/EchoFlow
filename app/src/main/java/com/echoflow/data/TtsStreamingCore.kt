@@ -72,7 +72,11 @@ object TtsTextNormalizer {
                 type == Character.NON_SPACING_MARK.toInt() ||
                     type == Character.COMBINING_SPACING_MARK.toInt() ||
                     type == Character.ENCLOSING_MARK.toInt() -> {
-                    if (acceptsCombiningMark) result.appendCodePoint(codePoint)
+                    // Combining marks are meaningful only when attached to a kept base character,
+                    // and the bundled Supertonic index cannot represent astral code points.
+                    if (acceptsCombiningMark && codePoint <= Char.MAX_VALUE.code) {
+                        result.appendCodePoint(codePoint)
+                    }
                 }
                 type == Character.FORMAT.toInt() -> Unit
                 else -> {
