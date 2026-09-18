@@ -18,6 +18,18 @@ class TtsTextChunkerTest {
     }
 
     @Test
+    fun `retry split never bisects an unbroken token`() {
+        val text = "Supercalifragilisticexpialidocious"
+
+        assertEquals(listOf(text), TtsTextChunker.splitForRetry(text))
+    }
+
+    @Test
+    fun `normalizer replaces unsupported astral letters with a separator`() {
+        assertEquals("alpha beta", TtsTextNormalizer.normalize("alpha\uD801\uDC00beta"))
+    }
+
+    @Test
     fun `normalizer keeps spoken text and prosodic punctuation only`() {
         val normalized = TtsTextNormalizer.normalize(
             "IQ3_XXS: 92.57 ≤ 93.12, €40 • 🥹 наистина?!",
