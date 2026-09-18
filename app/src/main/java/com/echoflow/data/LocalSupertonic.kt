@@ -205,8 +205,12 @@ private class LocalUnicodeProcessor(indexFile: File) {
         if (!text.matches(endPunctuation)) text += "."
         val wrapped = "<$language>$text</$language>"
         val codePoints = wrapped.codePoints().toArray()
+        val spaceToken = indexer.getOrElse(' '.code) { 0 }
         return Tokens(
-            IntArray(codePoints.size) { indexer[codePoints[it] and 0xffff] },
+            IntArray(codePoints.size) { position ->
+                val codePoint = codePoints[position]
+                if (codePoint in indexer.indices) indexer[codePoint] else spaceToken
+            },
             FloatArray(codePoints.size) { 1f },
         )
     }
@@ -306,8 +310,14 @@ class LocalSupertonicChunkSource(
                     } finally {
                         if (usableAudio && needsInitialCacheWrite) {
                             // Seed once. Rewriting between utterances destabilizes MNN 3.6.1 on
-                            // the Pixel OpenCL driver.
-                            LocalSupertonicNative.nativeCloseAndSaveCache(chunkHandle)
+                            // the Pixel OpenCL driver. Cache persistence is an optimization: a
+                            // write failure must not discard audio that already passed validation.
+                            try {
+                                LocalSupertonicNative.nativeCloseAndSaveCache(chunkHandle)
+                            } catch (error: IllegalStateException) {
+                                cache.delete()
+                                Log.w(LOG_TAG, "could not persist initial OpenCL cache; keeping valid audio", error)
+                            }
                         } else {
                             LocalSupertonicNative.nativeClose(chunkHandle)
                         }
